@@ -35,26 +35,28 @@ defined('ABSPATH') || exit;
         <span class="lpg-notice-dot"></span>
 
         <div>
-            <strong>
-                <?php esc_html_e(
-                    'Interface de démonstration',
-                    'local-page-generator'
-                ); ?>
-            </strong>
+            <?php if ($elementor_active) : ?>
 
-            <p>
                 <?php esc_html_e(
-                    'Les fonctionnalités seront connectées progressivement pendant les prochains épisodes.',
+                    'Connexion Elementor active',
                     'local-page-generator'
                 ); ?>
-            </p>
+
+            <?php else : ?>
+
+                <?php esc_html_e(
+                    'La sélection du modèle est maintenant fonctionnelle. Les autres étapes seront connectées progressivement.',
+                    'local-page-generator'
+                ); ?>
+
+            <?php endif; ?>
         </div>
     </div>
 
     <nav class="lpg-steps" aria-label="<?php esc_attr_e(
-        'Étapes de génération',
-        'local-page-generator'
-    ); ?>">
+                                            'Étapes de génération',
+                                            'local-page-generator'
+                                        ); ?>">
 
         <div class="lpg-step lpg-step-active">
             <span>1</span>
@@ -130,29 +132,174 @@ defined('ABSPATH') || exit;
                         </p>
                     </div>
 
-                    <span class="lpg-badge lpg-badge-warning">
-                        <?php esc_html_e(
-                            'Connexion prévue au jour 4',
-                            'local-page-generator'
-                        ); ?>
-                    </span>
+                    <?php if ($elementor_active) : ?>
+
+                        <span class="lpg-badge lpg-badge-success">
+                            <?php
+                            echo esc_html(
+                                sprintf(
+                                    'Elementor connecté — version %s',
+                                    $elementor_version
+                                )
+                            );
+                            ?>
+                        </span>
+
+                    <?php else : ?>
+
+                        <span class="lpg-badge lpg-badge-error">
+                            <?php
+                            esc_html_e(
+                                'Elementor absent ou désactivé',
+                                'local-page-generator'
+                            );
+                            ?>
+                        </span>
+
+                    <?php endif; ?>
                 </div>
 
-                <label for="lpg-template">
-                    <?php esc_html_e(
-                        'Modèle Elementor',
-                        'local-page-generator'
-                    ); ?>
-                </label>
+                <?php if (!$elementor_active) : ?>
 
-                <select id="lpg-template" disabled>
-                    <option>
-                        <?php esc_html_e(
-                            'Aucun modèle chargé pour le moment',
-                            'local-page-generator'
-                        ); ?>
-                    </option>
-                </select>
+                    <div class="lpg-inline-error">
+                        <strong>
+                            <?php
+                            esc_html_e(
+                                'Elementor est nécessaire pour continuer.',
+                                'local-page-generator'
+                            );
+                            ?>
+                        </strong>
+
+                        <p>
+                            <?php
+                            esc_html_e(
+                                'Installez ou activez Elementor pour récupérer les modèles.',
+                                'local-page-generator'
+                            );
+                            ?>
+                        </p>
+                    </div>
+
+                <?php else : ?>
+
+                    <form
+                        class="lpg-template-form"
+                        action="<?php echo esc_url(admin_url('admin-post.php')); ?>"
+                        method="post">
+                        <input
+                            type="hidden"
+                            name="action"
+                            value="lpg_save_template">
+
+                        <?php
+                        wp_nonce_field(
+                            'lpg_save_template',
+                            'lpg_nonce'
+                        );
+                        ?>
+
+                        <label for="lpg-template">
+                            <?php
+                            esc_html_e(
+                                'Modèle Elementor',
+                                'local-page-generator'
+                            );
+                            ?>
+                        </label>
+
+                        <select
+                            id="lpg-template"
+                            name="lpg_template_id"
+                            required
+                            <?php disabled(empty($templates)); ?>>
+                            <option value="">
+                                <?php
+                                esc_html_e(
+                                    'Sélectionnez un modèle',
+                                    'local-page-generator'
+                                );
+                                ?>
+                            </option>
+
+                            <?php foreach ($templates as $template) : ?>
+
+                                <?php
+                                $template_type = sanitize_key(
+                                    get_post_meta(
+                                        $template->ID,
+                                        '_elementor_template_type',
+                                        true
+                                    )
+                                );
+                                ?>
+
+                                <option
+                                    value="<?php echo esc_attr($template->ID); ?>"
+                                    <?php
+                                    selected(
+                                        $selected_template_id,
+                                        $template->ID
+                                    );
+                                    ?>>
+                                    <?php
+                                    echo esc_html(
+                                        sprintf(
+                                            '%s — %s',
+                                            $template->post_title,
+                                            $template_type ?: 'modèle'
+                                        )
+                                    );
+                                    ?>
+                                </option>
+
+                            <?php endforeach; ?>
+                        </select>
+
+                        <?php if (empty($templates)) : ?>
+
+                            <p class="description">
+                                <?php
+                                esc_html_e(
+                                    'Aucun modèle Elementor publié n’a été trouvé.',
+                                    'local-page-generator'
+                                );
+                                ?>
+                            </p>
+
+                        <?php endif; ?>
+
+                        <div class="lpg-template-actions">
+                            <button
+                                type="submit"
+                                class="button button-primary"
+                                <?php disabled(empty($templates)); ?>>
+                                <?php
+                                esc_html_e(
+                                    'Enregistrer le modèle',
+                                    'local-page-generator'
+                                );
+                                ?>
+                            </button>
+
+                            <?php if ($selected_template_id) : ?>
+
+                                <span class="lpg-template-saved">
+                                    <?php
+                                    echo esc_html(
+                                        sprintf(
+                                            'Modèle enregistré : #%d',
+                                            $selected_template_id
+                                        )
+                                    );
+                                    ?>
+                                </span>
+
+                            <?php endif; ?>
+                        </div>
+                    </form>
+
+                <?php endif; ?>
             </div>
         </section>
 
@@ -331,8 +478,7 @@ defined('ABSPATH') || exit;
                     <button
                         type="button"
                         class="button button-primary button-hero"
-                        disabled
-                    >
+                        disabled>
                         <?php esc_html_e(
                             'Générer les pages',
                             'local-page-generator'

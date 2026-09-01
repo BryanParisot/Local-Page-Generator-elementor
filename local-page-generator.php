@@ -17,10 +17,12 @@ define('LPG_URL', plugin_dir_url(__FILE__));
 require_once LPG_PATH . 'includes/class-lpg-plugin.php';
 
 /**
- * Lance le plugin.
+ * Démarre le plugin après le chargement des extensions.
  */
 function lpg_run_plugin()
 {
+    require_once LPG_PATH . 'includes/class-lpg-plugin.php';
+
     $plugin = new LPG_Plugin();
     $plugin->run();
 }
