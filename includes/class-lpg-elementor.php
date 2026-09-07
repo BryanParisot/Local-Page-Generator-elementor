@@ -72,4 +72,37 @@ class LPG_Elementor
         return 'elementor_library' === $template->post_type
             && 'publish' === $template->post_status;
     }
+
+    public function register_hooks()
+    {
+        add_action(
+            'elementor/dynamic_tags/register',
+            [$this, 'register_dynamic_tags']
+        );
+    }
+
+    public function register_dynamic_tags($dynamic_tags_manager)
+    {
+        require_once LPG_PATH
+            . 'elementor/dynamic-tags/class-lpg-variable-tag.php';
+
+        $dynamic_tags_manager->register_group(
+            'lpg-variables',
+            [
+                'title' => esc_html__(
+                    'Local Page Generator',
+                    'local-page-generator'
+                ),
+            ]
+        );
+
+        $dynamic_tags_manager->register(
+            new LPG_Variable_Tag()
+        );
+    }
+
+    public function is_pro_active()
+    {
+        return defined('ELEMENTOR_PRO_VERSION');
+    }
 }
