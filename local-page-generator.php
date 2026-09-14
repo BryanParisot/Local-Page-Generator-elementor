@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Local Page Generator
  * Description: Génère des pages Elementor à partir d’un fichier CSV.
- * Version: 0.6.0
+ * Version: 0.7.0
  * Author: Bryan Parisot
  * License: GPL-2.0-or-later
  * Text Domain: local-page-generator
@@ -10,7 +10,7 @@
 
 defined('ABSPATH') || exit;
 
-define('LPG_VERSION', '0.6.0');
+define('LPG_VERSION', '0.7.0');
 define('LPG_PATH', plugin_dir_path(__FILE__));
 define('LPG_URL', plugin_dir_url(__FILE__));
 

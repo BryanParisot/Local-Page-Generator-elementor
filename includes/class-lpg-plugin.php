@@ -6,6 +6,7 @@ require_once LPG_PATH . 'includes/class-lpg-elementor.php';
 require_once LPG_PATH . 'includes/class-lpg-template-variables.php';
 require_once LPG_PATH . 'includes/class-lpg-csv-importer.php';
 require_once LPG_PATH . 'includes/class-lpg-page-generator.php';
+require_once LPG_PATH . 'includes/class-lpg-onboarding.php';
 require_once LPG_PATH . 'admin/class-lpg-admin.php';
 
 class LPG_Plugin
@@ -19,12 +20,14 @@ class LPG_Plugin
             $template_variables = new LPG_Template_Variables();
             $csv_importer       = new LPG_CSV_Importer();
             $page_generator     = new LPG_Page_Generator();
+            $onboarding         = new LPG_Onboarding();
 
             $admin = new LPG_Admin(
                 $elementor,
                 $template_variables,
                 $csv_importer,
-                $page_generator
+                $page_generator,
+                $onboarding
             );
 
             $admin->register_hooks();

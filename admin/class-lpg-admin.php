@@ -38,23 +38,33 @@ class LPG_Admin
     private $page_generator;
 
     /**
+     * Service chargé de l'état du parcours guidé.
+     *
+     * @var LPG_Onboarding
+     */
+    private $onboarding;
+
+    /**
      * Initialise la partie administration.
      *
      * @param LPG_Elementor          $elementor          Service Elementor.
      * @param LPG_Template_Variables $template_variables Analyseur de variables.
      * @param LPG_CSV_Importer|null   $csv_importer       Lecteur de CSV.
      * @param LPG_Page_Generator|null $page_generator     Générateur de pages.
+     * @param LPG_Onboarding|null     $onboarding         État du parcours guidé.
      */
     public function __construct(
         $elementor,
         $template_variables,
         $csv_importer = null,
-        $page_generator = null
+        $page_generator = null,
+        $onboarding = null
     ) {
         $this->elementor          = $elementor;
         $this->template_variables = $template_variables;
         $this->csv_importer       = $csv_importer ?: new LPG_CSV_Importer();
         $this->page_generator     = $page_generator ?: new LPG_Page_Generator();
+        $this->onboarding         = $onboarding ?: new LPG_Onboarding();
     }
 
     /**
@@ -87,6 +97,25 @@ class LPG_Admin
             [$this, 'generate_pages']
         );
 
+        add_action(
+            'admin_post_lpg_finish_onboarding',
+            [$this, 'finish_onboarding']
+        );
+
+        add_action(
+            'admin_post_lpg_review_onboarding',
+            [$this, 'review_onboarding']
+        );
+
+        add_action(
+            'admin_post_lpg_toggle_mascot',
+            [$this, 'toggle_mascot']
+        );
+
+        add_action(
+            'admin_post_lpg_reset_workflow',
+            [$this, 'reset_workflow']
+        );
     }
 
     /**
@@ -126,6 +155,14 @@ class LPG_Admin
             [],
             LPG_VERSION
         );
+
+        wp_enqueue_script(
+            'lpg-admin-onboarding',
+            LPG_URL . 'assets/js/admin-onboarding.js',
+            [],
+            LPG_VERSION,
+            true
+        );
     }
 
     /**
@@ -145,7 +182,11 @@ class LPG_Admin
         }
 
         $templates            = $this->get_elementor_templates();
+        $elementor_is_active  = method_exists($this->elementor, 'is_active')
+            ? (bool) $this->elementor->is_active()
+            : !empty($templates);
         $selected_template_id = absint(get_option('lpg_template_id', 0));
+        $template_is_valid    = $this->is_valid_elementor_template($selected_template_id);
         $detected_variables   = [];
         $user_id              = get_current_user_id();
         $csv_preview          = get_transient('lpg_csv_preview_' . $user_id);
@@ -164,7 +205,7 @@ class LPG_Admin
             $generation_result = [];
         }
 
-        if ($selected_template_id) {
+        if ($template_is_valid) {
             $detected_variables = $this->template_variables->get_variables(
                 $selected_template_id
             );
@@ -183,6 +224,25 @@ class LPG_Admin
         ) {
             $generation_result = [];
         }
+
+        $onboarding_complete = $this->onboarding->is_completed($user_id);
+        $has_csv               = !empty($csv_preview['rows']) && is_array($csv_preview['rows']);
+        $has_generation_result = !empty($generation_result['generated'])
+            || !empty($generation_result['errors']);
+        $max_accessible_step = $this->onboarding->get_max_accessible_step(
+            $template_is_valid,
+            $template_is_valid && !empty($detected_variables),
+            $has_csv,
+            $has_generation_result || $onboarding_complete
+        );
+        $resolved_step       = $this->onboarding->resolve_current_step(
+            $user_id,
+            $max_accessible_step
+        );
+        $current_step        = $resolved_step['step'];
+        $step_was_blocked    = $resolved_step['blocked'];
+        $mascot_hidden       = $this->onboarding->is_mascot_hidden($user_id);
+        $mascot_images       = $this->onboarding->get_mascot_images();
 
         $view_path = LPG_PATH . 'admin/views/dashboard.php';
 
@@ -221,11 +281,11 @@ class LPG_Admin
             : 0;
 
         if (!$this->is_valid_elementor_template($template_id)) {
-            wp_die(
-                esc_html__(
-                    'Le modèle Elementor sélectionné est invalide.',
-                    'local-page-generator'
-                )
+            $this->redirect_to_dashboard(
+                [
+                    'lpg_step'       => 1,
+                    'template_error' => 1,
+                ]
             );
         }
 
@@ -235,10 +295,13 @@ class LPG_Admin
         delete_transient('lpg_csv_preview_' . $user_id);
         delete_transient('lpg_csv_errors_' . $user_id);
         delete_transient('lpg_generation_result_' . $user_id);
+        $this->onboarding->set_current_step($user_id, 2);
+        $this->onboarding->set_completed($user_id, false);
 
         $redirect_url = add_query_arg(
             [
                 'page'           => 'local-page-generator',
+                'lpg_step'       => 2,
                 'template_saved' => 1,
             ],
             admin_url('admin.php')
@@ -591,7 +654,13 @@ class LPG_Admin
                 30 * MINUTE_IN_SECONDS
             );
 
-            $this->redirect_to_dashboard(['csv_error' => 1]);
+            $this->onboarding->set_current_step($user_id, 3);
+            $this->redirect_to_dashboard(
+                [
+                    'lpg_step'  => 3,
+                    'csv_error' => 1,
+                ]
+            );
         }
 
         $preview = [
@@ -611,7 +680,13 @@ class LPG_Admin
             30 * MINUTE_IN_SECONDS
         );
 
-        $this->redirect_to_dashboard(['csv_imported' => 1]);
+        $this->onboarding->set_current_step($user_id, 4);
+        $this->redirect_to_dashboard(
+            [
+                'lpg_step'     => 4,
+                'csv_imported' => 1,
+            ]
+        );
     }
 
     /**
@@ -728,12 +803,23 @@ class LPG_Admin
                     'errors'      => array_values(array_unique($errors)),
                     'template_id' => $template_id,
                     'status'      => $post_status,
+                    'filename'    => isset($csv_preview['filename'])
+                        ? sanitize_file_name($csv_preview['filename'])
+                        : '',
+                    'headers'     => $headers,
+                    'row_count'   => count($rows),
                     'created_at'  => time(),
                 ],
                 $user_id
             );
 
-            $this->redirect_to_dashboard(['generation_error' => 1]);
+            $this->onboarding->set_current_step($user_id, 4);
+            $this->redirect_to_dashboard(
+                [
+                    'lpg_step'          => 4,
+                    'generation_error' => 1,
+                ]
+            );
         }
 
         $result = $this->page_generator->generate(
@@ -751,6 +837,11 @@ class LPG_Admin
             : [];
         $result['template_id'] = $template_id;
         $result['status']      = $post_status;
+        $result['filename']    = isset($csv_preview['filename'])
+            ? sanitize_file_name($csv_preview['filename'])
+            : '';
+        $result['headers']     = $headers;
+        $result['row_count']   = count($rows);
         $result['created_at']  = time();
 
         $this->store_generation_result($result, $user_id);
@@ -790,7 +881,116 @@ class LPG_Admin
             $redirect_arguments['generation_error'] = 1;
         }
 
+        $redirect_arguments['lpg_step'] = 4;
+        $this->onboarding->set_current_step($user_id, 4);
         $this->redirect_to_dashboard($redirect_arguments);
+    }
+
+    /**
+     * Termine le tutoriel après une génération réussie.
+     *
+     * @return void
+     */
+    public function finish_onboarding()
+    {
+        $this->assert_manage_options();
+        check_admin_referer('lpg_finish_onboarding', 'lpg_finish_nonce');
+
+        $user_id           = get_current_user_id();
+        $generation_result = get_transient('lpg_generation_result_' . $user_id);
+        $has_generated     = is_array($generation_result)
+            && !empty($generation_result['generated'])
+            && empty($generation_result['errors']);
+
+        if (!$has_generated) {
+            $this->redirect_to_dashboard(
+                [
+                    'lpg_step'       => 4,
+                    'finish_error'   => 1,
+                ]
+            );
+        }
+
+        $this->onboarding->set_completed($user_id, true);
+        $this->onboarding->set_current_step($user_id, 4);
+
+        $this->redirect_to_dashboard(
+            [
+                'lpg_step'            => 4,
+                'onboarding_finished' => 1,
+            ]
+        );
+    }
+
+    /**
+     * Permet de revoir le tutoriel sans effacer le travail courant.
+     *
+     * @return void
+     */
+    public function review_onboarding()
+    {
+        $this->assert_manage_options();
+        check_admin_referer('lpg_review_onboarding', 'lpg_review_nonce');
+
+        $user_id = get_current_user_id();
+        $this->onboarding->set_completed($user_id, false);
+        $this->onboarding->set_current_step($user_id, 1);
+
+        $this->redirect_to_dashboard(
+            [
+                'lpg_step'           => 1,
+                'onboarding_review'  => 1,
+            ]
+        );
+    }
+
+    /**
+     * Affiche ou masque les conseils de la mascotte pour l'utilisateur courant.
+     *
+     * @return void
+     */
+    public function toggle_mascot()
+    {
+        $this->assert_manage_options();
+        check_admin_referer('lpg_toggle_mascot', 'lpg_mascot_nonce');
+
+        $user_id = get_current_user_id();
+        $hidden  = isset($_POST['mascot_hidden'])
+            && is_scalar($_POST['mascot_hidden'])
+            && 1 === absint(wp_unslash($_POST['mascot_hidden']));
+        $step = isset($_POST['return_step']) && is_scalar($_POST['return_step'])
+            ? absint(wp_unslash($_POST['return_step']))
+            : 1;
+        $step = max(1, min(4, $step));
+
+        $this->onboarding->set_mascot_hidden($user_id, $hidden);
+
+        $this->redirect_to_dashboard(
+            [
+                'lpg_step'       => $step,
+                'mascot_updated' => 1,
+            ]
+        );
+    }
+
+    /**
+     * Démarre une nouvelle génération sans supprimer modèle ni pages existantes.
+     *
+     * @return void
+     */
+    public function reset_workflow()
+    {
+        $this->assert_manage_options();
+        check_admin_referer('lpg_reset_workflow', 'lpg_reset_nonce');
+
+        $this->onboarding->reset_workflow(get_current_user_id());
+
+        $this->redirect_to_dashboard(
+            [
+                'lpg_step'        => 1,
+                'workflow_reset'  => 1,
+            ]
+        );
     }
 
     /**
@@ -807,6 +1007,25 @@ class LPG_Admin
             'lpg_generation_result_' . absint($user_id),
             $result,
             30 * MINUTE_IN_SECONDS
+        );
+    }
+
+    /**
+     * Bloque les actions d'onboarding pour les utilisateurs non autorisés.
+     *
+     * @return void
+     */
+    private function assert_manage_options()
+    {
+        if (current_user_can('manage_options')) {
+            return;
+        }
+
+        wp_die(
+            esc_html__(
+                'Vous n’avez pas l’autorisation d’effectuer cette action.',
+                'local-page-generator'
+            )
         );
     }
 
