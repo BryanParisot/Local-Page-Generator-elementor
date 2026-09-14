@@ -3,6 +3,7 @@
  * Plugin Name: Local Page Generator
  * Description: Génère des pages Elementor à partir d’un fichier CSV.
  * Version: 0.7.0
+ * Requires PHP: 7.4
  * Author: Bryan Parisot
  * License: GPL-2.0-or-later
  * Text Domain: local-page-generator
